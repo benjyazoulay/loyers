@@ -106,14 +106,12 @@ if not data.empty:
         index=0
     )
 
-    # === AJOUT DU NOUVEAU SELECT INPUT MULTIPLE ===
     epoques_options = sorted(data['epoque_construction'].unique())
     epoque_selection = st.sidebar.multiselect(
         "Époque de construction",
         options=epoques_options,
-        default=epoques_options  # Sélectionne toutes les options par défaut
+        default=epoques_options
     )
-    # ============================================
 
     loyer_options = ['Loyers de référence majorés', 'Loyers de référence', 'Loyers de référence minorés']
     loyer_a_utiliser = st.sidebar.selectbox(
@@ -130,14 +128,11 @@ if not data.empty:
     col_loyer_selection = col_loyer_map[loyer_a_utiliser]
 
     # --- Filtrage et préparation des données pour la carte ---
-    # === MODIFICATION DU FILTRAGE POUR INCLURE L'ÉPOQUE ===
     df_filtered = data[
         (data['type_location'] == type_loc) &
         (data['epoque_construction'].isin(epoque_selection))
     ].copy()
-    # =======================================================
     
-    # Vérifier si le DataFrame filtré est vide après la sélection
     if df_filtered.empty:
         st.warning("Aucun logement ne correspond à vos critères de sélection. Veuillez modifier vos filtres.")
     else:
@@ -151,13 +146,19 @@ if not data.empty:
             
             group_sorted = group.sort_values(['nb_pieces', 'loyer_estime'])
             
-            tooltip_html = f"<b>{name}</b><br/>---<br/>"
+            # === MODIFICATION DE LA GÉNÉRATION DU HTML POUR LE POPUP ===
+            tooltip_html = f"<b>{name}</b><hr>"
             for _, row in group_sorted.iterrows():
                 check_icon = "✅" if row['dans_le_budget'] else "❌"
-                tooltip_html += (f"<b>{row['nb_pieces']} pièce</b> ({row['epoque_construction']}): "
-                                 f"{row[col_loyer_selection]:.2f} €/m² | "
-                                 f"Loyer: {row['loyer_estime']:.0f} € {check_icon}<br/>")
-            
+                
+                line_content = (f"<b>{row['nb_pieces']} pièce</b> ({row['epoque_construction']}): "
+                                f"{row[col_loyer_selection]:.2f} €/m² | "
+                                f"Loyer: {row['loyer_estime']:.0f} € {check_icon}")
+                
+                # Ajout du style CSS pour forcer une seule ligne
+                tooltip_html += f"<div style='white-space: nowrap;'>{line_content}</div>"
+            # ==========================================================
+
             quartiers_info[name] = {
                 'accessible': is_accessible,
                 'tooltip': tooltip_html,
@@ -184,7 +185,13 @@ if not data.empty:
                     tooltip=f"<b>{quartier}</b>"
                 )
                 
-                popup = folium.Popup(folium.Html(info['tooltip'], script=True), max_width=300)
+                # === MODIFICATION DE LA LARGEUR DU POPUP ===
+                popup = folium.Popup(
+                    folium.Html(info['tooltip'], script=True), 
+                    min_width=450, # Force une largeur minimale
+                    max_width=600  # Permet une largeur maximale
+                )
+                # ============================================
                 popup.add_to(poly)
                 
                 poly.add_to(m)
