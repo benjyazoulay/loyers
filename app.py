@@ -106,6 +106,15 @@ if not data.empty:
         index=0
     )
 
+    # === AJOUT DU NOUVEAU SELECT INPUT MULTIPLE ===
+    epoques_options = sorted(data['epoque_construction'].unique())
+    epoque_selection = st.sidebar.multiselect(
+        "Époque de construction",
+        options=epoques_options,
+        default=epoques_options  # Sélectionne toutes les options par défaut
+    )
+    # ============================================
+
     loyer_options = ['Loyers de référence majorés', 'Loyers de référence', 'Loyers de référence minorés']
     loyer_a_utiliser = st.sidebar.selectbox(
         "Type de loyer à considérer",
@@ -121,63 +130,68 @@ if not data.empty:
     col_loyer_selection = col_loyer_map[loyer_a_utiliser]
 
     # --- Filtrage et préparation des données pour la carte ---
-    df_filtered = data[data['type_location'] == type_loc].copy()
+    # === MODIFICATION DU FILTRAGE POUR INCLURE L'ÉPOQUE ===
+    df_filtered = data[
+        (data['type_location'] == type_loc) &
+        (data['epoque_construction'].isin(epoque_selection))
+    ].copy()
+    # =======================================================
     
-    df_filtered['loyer_estime'] = df_filtered[col_loyer_selection] * surface
-    df_filtered['dans_le_budget'] = df_filtered['loyer_estime'] <= budget
+    # Vérifier si le DataFrame filtré est vide après la sélection
+    if df_filtered.empty:
+        st.warning("Aucun logement ne correspond à vos critères de sélection. Veuillez modifier vos filtres.")
+    else:
+        df_filtered['loyer_estime'] = df_filtered[col_loyer_selection] * surface
+        df_filtered['dans_le_budget'] = df_filtered['loyer_estime'] <= budget
 
-    # Agréger les informations par quartier
-    quartiers_info = {}
-    for name, group in df_filtered.groupby('nom_quartier'):
-        is_accessible = group['dans_le_budget'].any()
-        
-        group_sorted = group.sort_values(['nb_pieces', 'loyer_estime'])
-        
-        tooltip_html = f"<b>{name}</b><br/>---<br/>"
-        for _, row in group_sorted.iterrows():
-            check_icon = "✅" if row['dans_le_budget'] else "❌"
+        # Agréger les informations par quartier
+        quartiers_info = {}
+        for name, group in df_filtered.groupby('nom_quartier'):
+            is_accessible = group['dans_le_budget'].any()
             
-            # === MODIFICATION DE LA LIGNE SUIVANTE ===
-            # Ajout de `row['epoque_construction']` dans le tooltip
-            tooltip_html += (f"<b>{row['nb_pieces']} pièce</b> {row['epoque_construction']}: "
-                             f"{row[col_loyer_selection]:.2f} €/m² | "
-                             f"Loyer: {row['loyer_estime']:.0f} € {check_icon}<br/>")
-            # ==========================================
-        
-        quartiers_info[name] = {
-            'accessible': is_accessible,
-            'tooltip': tooltip_html,
-            'geo_points': group.iloc[0]['geo_points']
-        }
+            group_sorted = group.sort_values(['nb_pieces', 'loyer_estime'])
+            
+            tooltip_html = f"<b>{name}</b><br/>---<br/>"
+            for _, row in group_sorted.iterrows():
+                check_icon = "✅" if row['dans_le_budget'] else "❌"
+                tooltip_html += (f"<b>{row['nb_pieces']} pièce</b> ({row['epoque_construction']}): "
+                                 f"{row[col_loyer_selection]:.2f} €/m² | "
+                                 f"Loyer: {row['loyer_estime']:.0f} € {check_icon}<br/>")
+            
+            quartiers_info[name] = {
+                'accessible': is_accessible,
+                'tooltip': tooltip_html,
+                'geo_points': group.iloc[0]['geo_points']
+            }
 
-    # --- Création de la carte Folium ---
-    map_center = [48.8566, 2.3522]
-    m = folium.Map(location=map_center, zoom_start=12, tiles="cartodbpositron")
-    
-    for quartier, info in quartiers_info.items():
-        color = 'green' if info['accessible'] else 'red'
+        # --- Création de la carte Folium ---
+        map_center = [48.8566, 2.3522]
+        m = folium.Map(location=map_center, zoom_start=12, tiles="cartodbpositron")
         
-        try:
-            points_inverted = [[point[1], point[0]] for point in info['geo_points'][0]]
+        for quartier, info in quartiers_info.items():
+            color = 'green' if info['accessible'] else 'red'
             
-            poly = folium.Polygon(
-                locations=points_inverted,
-                color=color,
-                fill=True,
-                fill_color=color,
-                fill_opacity=0.4,
-                weight=2,
-                tooltip=f"<b>{quartier}</b>"
-            )
-            
-            popup = folium.Popup(folium.Html(info['tooltip'], script=True), max_width=300)
-            popup.add_to(poly)
-            
-            poly.add_to(m)
-        except (TypeError, IndexError):
-            pass
+            try:
+                points_inverted = [[point[1], point[0]] for point in info['geo_points'][0]]
+                
+                poly = folium.Polygon(
+                    locations=points_inverted,
+                    color=color,
+                    fill=True,
+                    fill_color=color,
+                    fill_opacity=0.4,
+                    weight=2,
+                    tooltip=f"<b>{quartier}</b>"
+                )
+                
+                popup = folium.Popup(folium.Html(info['tooltip'], script=True), max_width=300)
+                popup.add_to(poly)
+                
+                poly.add_to(m)
+            except (TypeError, IndexError):
+                pass
 
-    # Affichage de la carte
-    st_folium(m, use_container_width=True, height=600)
+        # Affichage de la carte
+        st_folium(m, use_container_width=True, height=600)
 else:
     st.error("Les données n'ont pas pu être chargées ou aucune donnée n'est disponible pour 2025. Veuillez réessayer plus tard.")
